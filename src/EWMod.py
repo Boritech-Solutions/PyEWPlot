@@ -23,6 +23,7 @@ import PyEW, time, json, datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import io
+from scipy import signal
 
 class EWPyPlotter():
 

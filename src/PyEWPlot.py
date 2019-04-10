@@ -99,6 +99,12 @@ def graph_feed(StaStr):
   return Response(gen(StaStr),
                   mimetype='multipart/x-mixed-replace; boundary=frame')
 
+# Menu should return a json file with all channels              
+@app.route('/menu/')
+  stations = list(Plotter.get_menu())
+  stations.sort()
+  return jsonify(stations)
+
 # Main program start
 if __name__ == '__main__':
   try:

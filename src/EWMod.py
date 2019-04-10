@@ -103,6 +103,7 @@ class EWPyPlotter():
             ## Generate image and keep it in a memory buffer
             ## We can edit the final figure here:
             gain = 4.6799235e-04
+            
             fsz = 13  ## figure font size
             figx = 15 ## figure size parameter x
             figy = 3  ## figure size parameter y
@@ -123,8 +124,11 @@ class EWPyPlotter():
             plt.rcParams['xtick.labelsize'] = fsz-1
             plt.rcParams['ytick.labelsize'] = fsz-1
             plt.rcParams['legend.fontsize'] = fsz
-            plt.rcParams['figure.titlesize'] = fsz+2		
-            plt.plot(self.time_buffer[name], signal.detrend(gain*self.wave_buffer[name]),color=mycolors[1], lw = th)
+            plt.rcParams['figure.titlesize'] = fsz+2
+            # Show with gain and detrend	
+            #plt.plot(self.time_buffer[name], signal.detrend(gain*self.wave_buffer[name]),color=mycolors[1], lw = th)
+            # Just detrend
+            plt.plot(self.time_buffer[name], signal.detrend(self.wave_buffer[name]),color=mycolors[1], lw = th)
             plt.gcf().autofmt_xdate()
             plt.title(name,loc='right')
             plt.grid(True)
@@ -132,6 +136,7 @@ class EWPyPlotter():
             plt.gca().spines["right"].set_visible(False)
             plt.gca().spines["bottom"].set_color('grey')
             plt.gca().spines["left"].set_color('grey')
+            #Set the Y label
             plt.ylabel('Acc. ($cm/s/s$)',fontsize=fsz)
             plt.savefig(self.chan_buffer[name], format='jpg')
             plt.close()

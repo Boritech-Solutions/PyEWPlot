@@ -17,7 +17,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 # Import Flask and EWMod libraries
-from flask import Flask, render_template, Response, request
+from flask import Flask, render_template, Response, request, jsonify
 import configparser, argparse
 from EWMod import EWPyPlotter
 import time

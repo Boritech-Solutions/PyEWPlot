@@ -101,6 +101,7 @@ def graph_feed(StaStr):
 
 # Menu should return a json file with all channels              
 @app.route('/menu/')
+def menu_api():
   stations = list(Plotter.get_menu())
   stations.sort()
   return jsonify(stations)

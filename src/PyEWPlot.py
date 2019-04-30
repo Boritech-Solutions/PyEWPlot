@@ -70,17 +70,32 @@ def index():
 # Station Graph stream page
 @app.route('/Station/<Stat>')
 def STAgraph(Stat):
+  # Get stations and sort
   stations = list(Plotter.get_menu())
   stations.sort()
+  # Get matching channels and sort
   matching = [s for s in stations if Stat in s]
   matching.sort()
+  # Check for correct station
   if not matching:
     Status = "Incorrect Station or Station not ready"
     exts = False
   else:
     Status = "Graphs for Station: " + Stat
     exts = True
-  return render_template('station.html', exist = exts, value=Status, stations=matching)
+  chls = []
+  # Convert to tuple to sort by key (loc code)
+  for chs in matching:
+    chtp = tuple(chs.split('.'))
+    chls.append(chtp)
+  sorted(chls, key=lambda location: location[3])
+  # Convert back to string list to send to webpage
+  chsr = []
+  for ch in chls:
+    st = '.'.join(map(str, ch))
+    chsr.append(st)
+  # Render webpage
+  return render_template('station.html', exist = exts, value=Status, stations=chsr)
 
 # SCNL Graph stream page
 @app.route('/SCNL/<Stat>')

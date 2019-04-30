@@ -36,7 +36,7 @@ results = parser.parse_args()
 Config.read(results.ConfFile)
 
 # Start the Earthworm Module
-Plotter = EWPyPlotter(int(Config.get('Plot','Time')), int(Config.get('Earthworm','RING_ID')), \
+Plotter = EWPyPlotter(results.ConfFile, int(Config.get('Plot','Time')), int(Config.get('Earthworm','RING_ID')), \
                       int(Config.get('Earthworm','MOD_ID')), int(Config.get('Earthworm','INST_ID')),\
                       int(Config.get('Earthworm','HB')), DEBUG)
 Plotter.start()

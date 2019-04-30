@@ -16,7 +16,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 from threading import Thread
-import PyEW, time, json, datetime
+import PyEW, time, json, datetime, configparser
 # For Python2
 #import matplotlib as mpl
 #mpl.use('Agg')
@@ -27,7 +27,7 @@ from scipy import signal
 
 class EWPyPlotter():
 
-  def __init__(self, minutes = 1, defring = 1000, defmod = 9, defins = 141, defhb = 30.0, debug = False):
+  def __init__(self, configfile, minutes = 1, defring = 1000, defmod = 9, defins = 141, defhb = 30.0, debug = False):
     
     # Create a thread for self
     self.myThread = Thread(target=self.run)
@@ -37,6 +37,9 @@ class EWPyPlotter():
     
     # Add our Input ring as Ring 0
     self.ring2plot.add_ring(defring)
+    
+    self.Config = configparser.ConfigParser()
+    self.Config.read(configfile)
     
     # Buffer (minutes to buffer for)
     self.minutes = minutes
@@ -101,10 +104,28 @@ class EWPyPlotter():
             self.chan_buffer[name].truncate(0)
             self.chan_buffer[name].seek(0)
             
-            ## Generate image and keep it in a memory buffer
-            ## We can edit the final figure here:
-            gain = 4.6799235e-04
+            chan_type = str(wave["channel"][0:2]).lower()
+            if any(chan_type in s for s in self.Config.options("Channels")):
+                chan_opts = json.loads(self.Config.get("Channels", chan_type))
+                YLabel = str(chan_opts["YLabel"])
+                Detrend = chan_opts["Detrend"]
+                Gain = chan_opts["Gain"]
+                if self.debug:
+                    print("Channel exists")
+                    print (chan_opts)
+                    print(YLabel, Detrend, Gain)
+            else:
+                YLabel = "Value"
+                Detrend = True
+                Gain = 1
+                if self.debug:
+                    print("Channel does not exist")
+                    print(chan_type)
+                    print(self.Config.options('Channels'))
+                    print(YLabel, Detrend, Gain)
             
+            ## Generate image and keep it in a memory buffer
+            ## We can edit the final figure here:            
             fsz = 13  ## figure font size
             figx = 15 ## figure size parameter x
             figy = 3  ## figure size parameter y
@@ -126,10 +147,11 @@ class EWPyPlotter():
             plt.rcParams['ytick.labelsize'] = fsz-1
             plt.rcParams['legend.fontsize'] = fsz
             plt.rcParams['figure.titlesize'] = fsz+2
-            # Show with gain and detrend	
-            #plt.plot(self.time_buffer[name], signal.detrend(gain*self.wave_buffer[name]),color=mycolors[1], lw = th)
-            # Just detrend
-            plt.plot(self.time_buffer[name], signal.detrend(self.wave_buffer[name]),color=mycolors[1], lw = th)
+            # Show with gain and detrend
+            if Detrend:
+                plt.plot(self.time_buffer[name], Gain*signal.detrend(self.wave_buffer[name]),color=mycolors[1], lw = th)
+            else:
+                plt.plot(self.time_buffer[name], Gain*self.wave_buffer[name],color=mycolors[1], lw = th)
             plt.gcf().autofmt_xdate()
             plt.title(name,loc='right')
             plt.grid(True)
@@ -138,7 +160,7 @@ class EWPyPlotter():
             plt.gca().spines["bottom"].set_color('grey')
             plt.gca().spines["left"].set_color('grey')
             #Set the Y label
-            plt.ylabel('Acc. ($cm/s/s$)',fontsize=fsz)
+            plt.ylabel(YLabel,fontsize=fsz)
             plt.savefig(self.chan_buffer[name], format='jpg')
             plt.close()
             

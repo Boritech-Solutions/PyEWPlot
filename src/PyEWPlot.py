@@ -18,7 +18,8 @@
 
 # Import Flask and EWMod libraries
 from flask import Flask, render_template, Response, request, jsonify
-import configparser, argparse
+from logging.handlers import TimedRotatingFileHandler
+import configparser, argparse, logging, os, sys
 from EWMod import EWPyPlotter
 import time
 
@@ -34,6 +35,16 @@ parser.add_argument('-f', action="store", dest="ConfFile",   default="gsof2ring.
     
 results = parser.parse_args()
 Config.read(results.ConfFile)
+
+# Setup the module logfile
+log_path = os.environ['EW_LOG']
+log_name = results.ConfFile.split(".")[0] + ".log"
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh = TimedRotatingFileHandler(filename=log_path + log_name, when='midnight', interval=1, backupCount=3)
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(formatter)
+logging.getLogger().addHandler(fh)
+logging.getLogger().setLevel(logging.DEBUG)
 
 # Start the Earthworm Module
 Plotter = EWPyPlotter(results.ConfFile, int(Config.get('Plot','Time')), int(Config.get('Earthworm','RING_ID')), \

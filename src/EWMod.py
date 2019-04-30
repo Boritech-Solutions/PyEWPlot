@@ -16,14 +16,15 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 from threading import Thread
-import PyEW, time, json, datetime, configparser
+import PyEW, time, json, datetime, configparser, io, logging
 # For Python2
 #import matplotlib as mpl
 #mpl.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-import io
 from scipy import signal
+
+logger = logging.getLogger(__name__)
 
 class EWPyPlotter():
 
@@ -50,6 +51,7 @@ class EWPyPlotter():
     # Allow it to run
     self.runs = True
     self.debug = debug
+    logger.info("EW Module Started")
     
   def save_wave(self):
     
@@ -84,13 +86,9 @@ class EWPyPlotter():
         
         # Debug data
         if self.debug:
-            print("Station Channel combo is in buffer:")
-            print(name)
-            print("Max:")
-            print(max_samp)
-            print("Size:")
-            print(self.wave_buffer[name].size)
-            print(self.time_buffer[name].size)
+            logger.debug("Station Channel combo is in buffer: %s", name)
+            logger.debug("Max: %i", max_samp)
+            logger.debug("Size: wb %i, tb %i", self.wave_buffer[name].size, self.time_buffer[name].size)
             
         # If Data is bigger than buffer take a slice
         if self.wave_buffer[name].size >= max_samp:
@@ -111,18 +109,18 @@ class EWPyPlotter():
                 Detrend = chan_opts["Detrend"]
                 Gain = chan_opts["Gain"]
                 if self.debug:
-                    print("Channel exists")
-                    print (chan_opts)
-                    print(YLabel, Detrend, Gain)
+                    logger.debug("Channel exists")
+                    logger.debug(chan_opts)
+                    logger.debug("Label: %s, Detrend: %s, Gain: %f ", YLabel, Detrend, Gain)
             else:
                 YLabel = "Value"
                 Detrend = True
                 Gain = 1
                 if self.debug:
-                    print("Channel does not exist")
-                    print(chan_type)
-                    print(self.Config.options('Channels'))
-                    print(YLabel, Detrend, Gain)
+                    logger.debug("Channel does not exist")
+                    logger.debug(chan_type)
+                    logger.debug(self.Config.options('Channels'))
+                    logger.debug("Label: %s, Detrend: %s, Gain: %f ", YLabel, Detrend, Gain)
             
             ## Generate image and keep it in a memory buffer
             ## We can edit the final figure here:            
@@ -166,11 +164,8 @@ class EWPyPlotter():
             
             # Debug data
             if self.debug:
-                print("Data was sliced at sample:")
-                print(samp)
-                print("New Size:")
-                print(self.wave_buffer[name].size) 
-                print(self.time_buffer[name].size)
+                logger.debug("Data was sliced at sample: %i", samp)
+                logger.debug("New Size: wb %i, tb %i ", self.wave_buffer[name].size, self.time_buffer[name].size)
     else:
         
         # Generate the time array
@@ -186,11 +181,8 @@ class EWPyPlotter():
         
         # Debug data
         if self.debug:
-            print("First instance of station/channel:")
-            print(name)
-            print("Size:")
-            print(self.wave_buffer[name].size)
-            print(self.time_buffer[name].size)
+            logger.debug("First instance of station/channel: %s", name)
+            logger.debug("Size: wb %i, tb %i", self.wave_buffer[name].size, self.time_buffer[name].size)
   
   def get_frame(self, station):
     # Function returns a bytearray of the current graph
@@ -198,7 +190,7 @@ class EWPyPlotter():
       try:
         val = self.chan_buffer[station].getvalue()
       except OSError as e:
-        print(e)
+        logger.error(e)
       return val
     else:
       return
@@ -218,7 +210,7 @@ class EWPyPlotter():
       time.sleep(0.001)
       self.save_wave()
     self.ring2plot.goodbye()
-    print ("Exiting")
+    logger.info("EW Module Stopped")
       
   def start(self):
     self.myThread.start()

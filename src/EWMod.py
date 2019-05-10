@@ -15,7 +15,7 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>
 
-from threading import Thread
+from threading import Thread, Event
 import PyEW, time, json, datetime, configparser, io, logging
 # For Python2
 #import matplotlib as mpl
@@ -32,6 +32,10 @@ class EWPyPlotter():
     
     # Create a thread for self
     self.myThread = Thread(target=self.run)
+
+    # Create an thread event in order to wait efficiently.
+    self.availible = Event()
+    self.graph_avail = Event()
     
     # Start an EW Module with parent ring 1000, mod_id 8, inst_id 141, heartbeat 30s, debug = False (MODIFY THIS!)
     self.ring2plot = PyEW.EWModule(defring, defmod, defins, defhb, debug)
@@ -47,6 +51,7 @@ class EWPyPlotter():
     self.wave_buffer = {}
     self.time_buffer = {}
     self.chan_buffer = {}
+    self.stat_buffer = {}
     
     # Allow it to run
     self.runs = True
@@ -64,7 +69,6 @@ class EWPyPlotter():
     
     # Lets try to buffer with python dictionaries
     name = wave["station"] + '.' + wave["channel"] + '.' + wave["network"] +'.' + wave["location"]
-    stat = wave["station"]
     
     # Lets check if we have a buffer for this Station/Channel combo
     if name in self.wave_buffer :
@@ -79,6 +83,7 @@ class EWPyPlotter():
             time_array[i] = (wave['startt'] + (time_skip*i)) * 1000
         time_array = np.array(time_array, dtype='datetime64[ms]')
         
+        self.availible.wait()
         # Append data to buffer
         self.wave_buffer[name] = np.append(self.wave_buffer[name], wave["data"] )
         self.time_buffer[name] = np.append(self.time_buffer[name], time_array )
@@ -97,77 +102,22 @@ class EWPyPlotter():
             samp = int(np.floor(self.wave_buffer[name].size - max_samp))
             self.wave_buffer[name] = self.wave_buffer[name][tuple([np.s_[samp::]])]
             self.time_buffer[name] = self.time_buffer[name][tuple([np.s_[samp::]])]
+            self.stat_buffer[name] = True
             
-            # Keep last and Clear image buffer
-            self.chan_buffer[name].truncate(0)
-            self.chan_buffer[name].seek(0)
-            
-            chan_type = str(wave["channel"][0:2]).lower()
-            if any(chan_type in s for s in self.Config.options("Channels")):
-                chan_opts = json.loads(self.Config.get("Channels", chan_type))
-                YLabel = str(chan_opts["YLabel"])
-                Detrend = chan_opts["Detrend"]
-                Gain = chan_opts["Gain"]
-                if self.debug:
-                    logger.debug("Channel exists")
-                    logger.debug(chan_opts)
-                    logger.debug("Label: %s, Detrend: %s, Gain: %f ", YLabel, Detrend, Gain)
-            else:
-                YLabel = "Value"
-                Detrend = True
-                Gain = 1
-                if self.debug:
-                    logger.debug("Channel does not exist")
-                    logger.debug(chan_type)
-                    logger.debug(self.Config.options('Channels'))
-                    logger.debug("Label: %s, Detrend: %s, Gain: %f ", YLabel, Detrend, Gain)
-            
-            ## Generate image and keep it in a memory buffer
-            ## We can edit the final figure here:            
-            fsz = 13  ## figure font size
-            figx = 15 ## figure size parameter x
-            figy = 3  ## figure size parameter y
-            mycolors = ["#3F5D7D", "black", "#4169E1"] 
-            th = 0.5
-            plt.figure(figsize=(figx,figy))
-            plt.clf()
-            # Alternatives include bmh, fivethirtyeight, ggplot,
-            # dark_background, seaborn-deep, etc
-            plt.style.use('bmh')
-            plt.rcParams['font.family'] = 'sans-serif'
-            plt.rcParams['font.serif'] = 'Ubuntu'
-            plt.rcParams['font.monospace'] = 'Ubuntu Mono'
-            plt.rcParams['font.size'] = fsz
-            plt.rcParams['axes.labelsize'] = fsz
-            plt.rcParams['axes.labelweight'] = 'bold'
-            plt.rcParams['axes.titlesize'] = fsz
-            plt.rcParams['xtick.labelsize'] = fsz-1
-            plt.rcParams['ytick.labelsize'] = fsz-1
-            plt.rcParams['legend.fontsize'] = fsz
-            plt.rcParams['figure.titlesize'] = fsz+2
-            # Show with gain and detrend
-            if Detrend:
-                plt.plot(self.time_buffer[name], Gain*signal.detrend(self.wave_buffer[name]),color=mycolors[1], lw = th)
-            else:
-                plt.plot(self.time_buffer[name], Gain*self.wave_buffer[name],color=mycolors[1], lw = th)
-            plt.gcf().autofmt_xdate()
-            plt.title(name,loc='right')
-            plt.grid(True)
-            plt.gca().spines["top"].set_visible(False)
-            plt.gca().spines["right"].set_visible(False)
-            plt.gca().spines["bottom"].set_color('grey')
-            plt.gca().spines["left"].set_color('grey')
-            #Set the Y label
-            plt.ylabel(YLabel,fontsize=fsz)
-            plt.savefig(self.chan_buffer[name], format='jpg')
-            plt.close()
-            
+            # Safe to proceed
+            self.availible.set()
+
             # Debug data
             if self.debug:
                 logger.debug("Data was sliced at sample: %i", samp)
                 logger.debug("New Size: wb %i, tb %i ", self.wave_buffer[name].size, self.time_buffer[name].size)
+        # Else set the event to proceed
+        else:
+          # Safe to proceed
+          self.availible.set()
+    
     else:
-        
+      
         # Generate the time array
         time_array = np.zeros(wave['data'].size)
         time_skip = 1/wave['samprate']
@@ -178,21 +128,101 @@ class EWPyPlotter():
         self.wave_buffer[name] = wave["data"]
         self.time_buffer[name] = np.array(time_array, dtype='datetime64[ms]')
         self.chan_buffer[name] = io.BytesIO()
-        
+        self.stat_buffer[name] = False
+
+        # Safe to proceed
+        self.availible.set()
+
         # Debug data
         if self.debug:
             logger.debug("First instance of station/channel: %s", name)
             logger.debug("Size: wb %i, tb %i", self.wave_buffer[name].size, self.time_buffer[name].size)
   
-  def get_frame(self, station):
-    # Function returns a bytearray of the current graph
-    if station in self.chan_buffer :
-      try:
-        val = self.chan_buffer[station].getvalue()
-      except OSError as e:
-        logger.error(e)
-      return val
+  def graph_chan(self, scnl):
+    # Keep last and Clear image buffer
+    self.chan_buffer[scnl].truncate(0)
+    self.chan_buffer[scnl].seek(0)
+    
+    chan_type = str(scnl.split('.')[1][0:2]).lower()
+    if any(chan_type in s for s in self.Config.options("Channels")):
+        chan_opts = json.loads(self.Config.get("Channels", chan_type))
+        YLabel = str(chan_opts["YLabel"])
+        Detrend = chan_opts["Detrend"]
+        Gain = chan_opts["Gain"]
+        if self.debug:
+            logger.debug("Channel exists")
+            logger.debug(chan_opts)
+            logger.debug("Label: %s, Detrend: %s, Gain: %f ", YLabel, Detrend, Gain)
     else:
+        YLabel = "Value"
+        Detrend = True
+        Gain = 1
+        if self.debug:
+            logger.debug("Channel does not exist")
+            logger.debug(chan_type)
+            logger.debug(self.Config.options('Channels'))
+            logger.debug("Label: %s, Detrend: %s, Gain: %f ", YLabel, Detrend, Gain)
+    
+    ## Generate image and keep it in a memory buffer
+    ## We can edit the final figure here:            
+    fsz = 13  ## figure font size
+    figx = 15 ## figure size parameter x
+    figy = 3  ## figure size parameter y
+    mycolors = ["#3F5D7D", "black", "#4169E1"] 
+    th = 0.5
+    plt.figure(figsize=(figx,figy))
+    plt.clf()
+    # Alternatives include bmh, fivethirtyeight, ggplot,
+    # dark_background, seaborn-deep, etc
+    plt.style.use('bmh')
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.serif'] = 'Ubuntu'
+    plt.rcParams['font.monospace'] = 'Ubuntu Mono'
+    plt.rcParams['font.size'] = fsz
+    plt.rcParams['axes.labelsize'] = fsz
+    plt.rcParams['axes.labelweight'] = 'bold'
+    plt.rcParams['axes.titlesize'] = fsz
+    plt.rcParams['xtick.labelsize'] = fsz-1
+    plt.rcParams['ytick.labelsize'] = fsz-1
+    plt.rcParams['legend.fontsize'] = fsz
+    plt.rcParams['figure.titlesize'] = fsz+2
+    plt.gcf().autofmt_xdate()
+    plt.title(scnl,loc='right')
+    plt.grid(True)
+    plt.gca().spines["top"].set_visible(False)
+    plt.gca().spines["right"].set_visible(False)
+    plt.gca().spines["bottom"].set_color('grey')
+    plt.gca().spines["left"].set_color('grey')
+    plt.ylabel(YLabel,fontsize=fsz)
+    # Show with gain and detrend
+    self.availible.wait()
+    if Detrend:
+        plt.plot(self.time_buffer[scnl], Gain*signal.detrend(self.wave_buffer[scnl]),color=mycolors[1], lw = th)
+    else:
+        plt.plot(self.time_buffer[scnl], Gain*self.wave_buffer[scnl],color=mycolors[1], lw = th)
+    self.availible.set()
+    plt.savefig(self.chan_buffer[scnl], format='jpg')
+    plt.close()
+    self.graph_avail.set()
+
+  def get_frame(self, station, out_event):
+    # Function returns a bytearray of the current graph
+    if station in self.chan_buffer:
+      if self.stat_buffer[station]:
+        try:
+          time.sleep(0.1)
+          self.graph_chan(station)
+          self.graph_avail.wait()
+          val = self.chan_buffer[station].getvalue()
+        except OSError as e:
+          logger.error(e)
+        out_event.set()
+        return val
+      else:
+        out_event.set()
+        return
+    else:
+      out_event.set()
       return
       
   def get_menu(self):
@@ -217,4 +247,3 @@ class EWPyPlotter():
     
   def stop(self):
     self.runs = False
- 

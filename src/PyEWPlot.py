@@ -20,6 +20,7 @@
 from flask import Flask, render_template, Response, request, jsonify
 from logging.handlers import TimedRotatingFileHandler
 import configparser, argparse, logging, os, sys
+from threading import Event
 from EWMod import EWPyPlotter
 import time
 
@@ -59,8 +60,9 @@ app = Flask(__name__,static_url_path = "/tmp", static_folder = "tmp")
 def gen(station):
   while True:
     time.sleep(0.3)
-    frame = Plotter.get_frame(station)
-    last_frame = 0
+    graph_ready = Event()
+    frame = Plotter.get_frame(station, graph_ready)
+    graph_ready.wait()
     if len(frame) is not 0:
       yield (b'--frame\r\n'
              b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
@@ -111,7 +113,8 @@ def STAgraph(Stat):
 # SCNL Graph stream page
 @app.route('/SCNL/<Stat>')
 def SCNLgraph(Stat):
-  if Plotter.get_frame(Stat) is None:
+  graph_ready = Event()
+  if Plotter.get_frame(Stat,graph_ready) is None:
     Status = "Incorrect Station or Station not ready"
     exts = False
   else: 

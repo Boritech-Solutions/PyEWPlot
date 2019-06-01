@@ -138,4 +138,4 @@ if __name__ == '__main__':
     app.run(host=Config.get('Server','IP'), port=Config.get('Server','PORT'), debug=DEBUG)
   except KeyboardInterrupt:
     print("\nSTATUS: Stopping, you hit ctl+C. ")
-    Plotter.goodbye()
+    Plotter.stop()

@@ -141,12 +141,12 @@ class EWPyPlotter():
         figx = 800 ## figure size parameter x
         figy = 600  ## figure size parameter y
         
-        # Create a deep copy (I don't know if this is actually needed.)
-        temptrace = self.wave_buffer[station].copy()
+        #Flush buffer!
+        self.plot_buffer[station].truncate(0)
+        self.plot_buffer[station].seek(0)
         
         # Plot and output
-        temptrace.plot(size=(figx, figy), outfile=self.plot_buffer[station], format = 'jpg')
-        
+        self.wave_buffer[station].plot(size=(figx, figy), outfile=self.plot_buffer[station], format = 'jpg')
       except OSError as e:
         logger.error(e)
       return self.plot_buffer[station].getvalue()

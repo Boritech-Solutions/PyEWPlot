@@ -58,7 +58,7 @@ app = Flask(__name__,static_url_path = "/tmp", static_folder = "tmp")
 # Generate image stream
 def gen(station):
   while True:
-    time.sleep(0.3)
+    time.sleep(0.5)
     frame = Plotter.get_frame(station)
     if len(frame) is not 0:
       yield (b'--frame\r\n'

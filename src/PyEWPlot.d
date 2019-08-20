@@ -1,7 +1,7 @@
 [Earthworm]
 RING_ID: 1000
 MOD_ID: 9
-INST_ID: 141
+INST_ID: 28
 HB: 30
 
 [Server]

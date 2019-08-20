@@ -14,39 +14,35 @@
 #
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>
-
-from threading import Thread
-import PyEW, time, json, datetime, configparser, io, logging
+#
 # For Python2
 #import matplotlib as mpl
 #mpl.use('Agg')
-import matplotlib.pyplot as plt
+
+import configparser, logging, os, time, PyEW, obspy, io
+from obspy.core import Trace, Stats, UTCDateTime
+from obspy.realtime import RtTrace
+from threading import Thread
 import numpy as np
-from scipy import signal
 
 logger = logging.getLogger(__name__)
 
 class EWPyPlotter():
 
-  def __init__(self, configfile, minutes = 1, defring = 1000, defmod = 9, defins = 141, defhb = 30.0, debug = False):
+  def __init__(self, minutes = 1, RING_ID = 1000, MOD_ID = 9, INST_ID = 141 , HB = 30, debug = False):
     
     # Create a thread for self
     self.myThread = Thread(target=self.run)
     
     # Start an EW Module with parent ring 1000, mod_id 8, inst_id 141, heartbeat 30s, debug = False (MODIFY THIS!)
-    self.ring2plot = PyEW.EWModule(defring, defmod, defins, defhb, debug)
+    self.ring2plot = PyEW.EWModule(RING_ID, MOD_ID, INST_ID, HB, debug)
     
     # Add our Input ring as Ring 0
-    self.ring2plot.add_ring(defring)
-    
-    self.Config = configparser.ConfigParser()
-    self.Config.read(configfile)
+    self.ring2plot.add_ring(RING_ID)
     
     # Buffer (minutes to buffer for)
     self.minutes = minutes
     self.wave_buffer = {}
-    self.time_buffer = {}
-    self.chan_buffer = {}
     
     # Allow it to run
     self.runs = True
@@ -54,150 +50,106 @@ class EWPyPlotter():
     logger.info("EW Module Started")
     
   def save_wave(self):
-    
-    # Fetch a wave from Ring 0
+  
+     # Fetch a wave from Ring 0
     wave = self.ring2plot.get_wave(0) 
     
     # if wave is empty return
     if wave == {}: 
-      return
+        return
     
-    # Lets try to buffer with python dictionaries
-    name = wave["station"] + '.' + wave["channel"] + '.' + wave["network"] +'.' + wave["location"]
-    stat = wave["station"]
+    # Lets try to buffer with python dictionaries and obspy
+    name = wave["station"] + '.' + wave["channel"] + '.' + wave["network"] + '.' + wave["location"]
     
-    # Lets check if we have a buffer for this Station/Channel combo
     if name in self.wave_buffer :
     
         # Determine max samples for buffer
         max_samp = wave["samprate"] * 60 * self.minutes
         
-        # Generate the time array
-        time_array = np.zeros(wave['data'].size)
-        time_skip = 1/wave['samprate']
-        for i in range(0, wave['data'].size):
-            time_array[i] = (wave['startt'] + (time_skip*i)) * 1000
-        time_array = np.array(time_array, dtype='datetime64[ms]')
+        # Create a header:
+        wavestats = Stats()
+        wavestats.station = wave["station"]
+        wavestats.network = wave["network"]
+        wavestats.channel = wave["channel"]
+        wavestats.location = wave["location"]
+        wavestats.sampling_rate = wave["samprate"]
+        wavestats.starttime = UTCDateTime(wave['startt'])
+        
+        # Create a trace
+        wavetrace = Trace(header= wavestats)
+        wavetrace.data = wave["data"]
         
         # Append data to buffer
-        self.wave_buffer[name] = np.append(self.wave_buffer[name], wave["data"] )
-        self.time_buffer[name] = np.append(self.time_buffer[name], time_array )
-        self.time_buffer[name] = self.time_buffer[name][0:self.wave_buffer[name].size]
+        try:
+            self.wave_buffer[name].append(wavetrace, gap_overlap_check=True)
+        except TypeError as err:
+            logger.warning(err)
+            self.runs = False
+        except:
+            raise
+            self.runs = False
+        
+        # Print Starttime (Debug)
+        #print(name, self.wave_buffer[name].stats.starttime)
         
         # Debug data
         if self.debug:
-            logger.debug("Station Channel combo is in buffer: %s", name)
-            logger.debug("Max: %i", max_samp)
-            logger.debug("Size: wb %i, tb %i", self.wave_buffer[name].size, self.time_buffer[name].size)
-            
-        # If Data is bigger than buffer take a slice
-        if self.wave_buffer[name].size >= max_samp:
-        
-            # Determine where to cut the data and slice
-            samp = int(np.floor(self.wave_buffer[name].size - max_samp))
-            self.wave_buffer[name] = self.wave_buffer[name][tuple([np.s_[samp::]])]
-            self.time_buffer[name] = self.time_buffer[name][tuple([np.s_[samp::]])]
-            
-            # Keep last and Clear image buffer
-            self.chan_buffer[name].truncate(0)
-            self.chan_buffer[name].seek(0)
-            
-            chan_type = str(wave["channel"][0:2]).lower()
-            if any(chan_type in s for s in self.Config.options("Channels")):
-                chan_opts = json.loads(self.Config.get("Channels", chan_type))
-                YLabel = str(chan_opts["YLabel"])
-                Detrend = chan_opts["Detrend"]
-                Gain = chan_opts["Gain"]
-                if self.debug:
-                    logger.debug("Channel exists")
-                    logger.debug(chan_opts)
-                    logger.debug("Label: %s, Detrend: %s, Gain: %f ", YLabel, Detrend, Gain)
-            else:
-                YLabel = "Value"
-                Detrend = True
-                Gain = 1
-                if self.debug:
-                    logger.debug("Channel does not exist")
-                    logger.debug(chan_type)
-                    logger.debug(self.Config.options('Channels'))
-                    logger.debug("Label: %s, Detrend: %s, Gain: %f ", YLabel, Detrend, Gain)
-            
-            ## Generate image and keep it in a memory buffer
-            ## We can edit the final figure here:            
-            fsz = 13  ## figure font size
-            figx = 15 ## figure size parameter x
-            figy = 3  ## figure size parameter y
-            mycolors = ["#3F5D7D", "black", "#4169E1"] 
-            th = 0.5
-            plt.figure(figsize=(figx,figy))
-            plt.clf()
-            # Alternatives include bmh, fivethirtyeight, ggplot,
-            # dark_background, seaborn-deep, etc
-            plt.style.use('bmh')
-            plt.rcParams['font.family'] = 'sans-serif'
-            plt.rcParams['font.serif'] = 'Ubuntu'
-            plt.rcParams['font.monospace'] = 'Ubuntu Mono'
-            plt.rcParams['font.size'] = fsz
-            plt.rcParams['axes.labelsize'] = fsz
-            plt.rcParams['axes.labelweight'] = 'bold'
-            plt.rcParams['axes.titlesize'] = fsz
-            plt.rcParams['xtick.labelsize'] = fsz-1
-            plt.rcParams['ytick.labelsize'] = fsz-1
-            plt.rcParams['legend.fontsize'] = fsz
-            plt.rcParams['figure.titlesize'] = fsz+2
-            # Show with gain and detrend
-            if Detrend:
-                plt.plot(self.time_buffer[name], Gain*signal.detrend(self.wave_buffer[name]),color=mycolors[1], lw = th)
-            else:
-                plt.plot(self.time_buffer[name], Gain*self.wave_buffer[name],color=mycolors[1], lw = th)
-            plt.gcf().autofmt_xdate()
-            plt.title(name,loc='right')
-            plt.grid(True)
-            plt.gca().spines["top"].set_visible(False)
-            plt.gca().spines["right"].set_visible(False)
-            plt.gca().spines["bottom"].set_color('grey')
-            plt.gca().spines["left"].set_color('grey')
-            #Set the Y label
-            plt.ylabel(YLabel,fontsize=fsz)
-            plt.savefig(self.chan_buffer[name], format='jpg')
-            plt.close()
-            
-            # Debug data
-            if self.debug:
-                logger.debug("Data was sliced at sample: %i", samp)
-                logger.debug("New Size: wb %i, tb %i ", self.wave_buffer[name].size, self.time_buffer[name].size)
+            logger.info("Station Channel combo is in buffer:")
+            logger.info(name)
+            logger.info("Size:")
+            logger.info(self.wave_buffer[name].count())
+            logger.debug("Data:")
+            logger.debug(self.wave_buffer[name])
+           
     else:
+        # First instance of data in buffer, create a header:
+        wavestats = Stats()
+        wavestats.station = wave["station"]
+        wavestats.network = wave["network"]
+        wavestats.channel = wave["channel"]
+        wavestats.location = wave["location"]
+        wavestats.sampling_rate = wave["samprate"]
+        wavestats.starttime = UTCDateTime(wave['startt'])
         
-        # Generate the time array
-        time_array = np.zeros(wave['data'].size)
-        time_skip = 1/wave['samprate']
-        for i in range(0, wave['data'].size):
-            time_array[i] = (wave['startt'] + (time_skip*i)) * 1000
+        # Create a trace
+        wavetrace = Trace(header=wavestats)
+        wavetrace.data = wave["data"]
         
-        # First instance of data in buffer, create buffer:
-        self.wave_buffer[name] = wave["data"]
-        self.time_buffer[name] = np.array(time_array, dtype='datetime64[ms]')
-        self.chan_buffer[name] = io.BytesIO()
+        # Create a RTTrace
+        rttrace = RtTrace(int(self.minutes*60))
+        self.wave_buffer[name] = rttrace
+        
+        # Append data
+        self.wave_buffer[name].append(wavetrace, gap_overlap_check=True)
         
         # Debug data
         if self.debug:
-            logger.debug("First instance of station/channel: %s", name)
-            logger.debug("Size: wb %i, tb %i", self.wave_buffer[name].size, self.time_buffer[name].size)
+            logger.info("First instance of station/channel:")
+            logger.info(name)
+            logger.info("Size:")
+            logger.info(self.wave_buffer[name].count())
+            logger.debug("Data:")
+            logger.debug(self.wave_buffer[name])
   
   def get_frame(self, station):
     # Function returns a bytearray of the current graph
-    if station in self.chan_buffer :
+    if station in self.wave_buffer :
+      # Create Byte Array
+      val = io.BytesIO()
       try:
-        val = self.chan_buffer[station].getvalue()
+        figx = 800 ## figure size parameter x
+        figy = 600  ## figure size parameter y
+        temptrace = self.wave_buffer[station].copy()
+        temptrace.plot(size=(figx, figy), outfile=val, format = 'jpg')
       except OSError as e:
         logger.error(e)
-      return val
+      return val.getvalue()
     else:
       return
       
   def get_menu(self):
     # Function returns a dictionary of station and channels
-    return self.chan_buffer.keys()
+    return self.wave_buffer.keys()
   
   def status(self):
     return self.runs

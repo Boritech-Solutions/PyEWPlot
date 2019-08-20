@@ -47,7 +47,7 @@ logging.getLogger().addHandler(fh)
 logging.getLogger().setLevel(logging.DEBUG)
 
 # Start the Earthworm Module
-Plotter = EWPyPlotter(results.ConfFile, int(Config.get('Plot','Time')), int(Config.get('Earthworm','RING_ID')), \
+Plotter = EWPyPlotter(int(Config.get('Plot','Time')), int(Config.get('Earthworm','RING_ID')), \
                       int(Config.get('Earthworm','MOD_ID')), int(Config.get('Earthworm','INST_ID')),\
                       int(Config.get('Earthworm','HB')), DEBUG)
 Plotter.start()
@@ -60,7 +60,6 @@ def gen(station):
   while True:
     time.sleep(0.3)
     frame = Plotter.get_frame(station)
-    last_frame = 0
     if len(frame) is not 0:
       yield (b'--frame\r\n'
              b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')

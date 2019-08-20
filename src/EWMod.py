@@ -43,6 +43,7 @@ class EWPyPlotter():
     # Buffer (minutes to buffer for)
     self.minutes = minutes
     self.wave_buffer = {}
+    self.plot_buffer = {}
     
     # Allow it to run
     self.runs = True
@@ -119,8 +120,9 @@ class EWPyPlotter():
         rttrace = RtTrace(int(self.minutes*60))
         self.wave_buffer[name] = rttrace
         
-        # Append data
+        # Append data and add io buffer
         self.wave_buffer[name].append(wavetrace, gap_overlap_check=True)
+        self.plot_buffer[name] = io.BytesIO()
         
         # Debug data
         if self.debug:
@@ -134,16 +136,20 @@ class EWPyPlotter():
   def get_frame(self, station):
     # Function returns a bytearray of the current graph
     if station in self.wave_buffer :
-      # Create Byte Array
-      val = io.BytesIO()
       try:
+        # New plot params go here.
         figx = 800 ## figure size parameter x
         figy = 600  ## figure size parameter y
+        
+        # Create a deep copy (I don't know if this is actually needed.)
         temptrace = self.wave_buffer[station].copy()
-        temptrace.plot(size=(figx, figy), outfile=val, format = 'jpg')
+        
+        # Plot and output
+        temptrace.plot(size=(figx, figy), outfile=self.plot_buffer[station], format = 'jpg')
+        
       except OSError as e:
         logger.error(e)
-      return val.getvalue()
+      return self.plot_buffer[station].getvalue()
     else:
       return
       
